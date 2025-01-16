@@ -1,0 +1,30 @@
+version: "3"
+services:
+  postfix:
+    image: debian:bookworm-slim
+    container_name: "postfix"
+    ports:
+      - "25:25"
+    volumes:
+      - ./hook.py:/tmp/hook.py:z
+    command:
+      - /bin/bash
+      - -c
+      - |
+        apt update
+        apt install -y apt-utils dialog
+        chmod 777 /tmp/hook.py
+        chmod 777 /tmp/.env
+        debconf-set-selections <<< "postfix postfix/mailname string postfix.localdomain"
+        debconf-set-selections <<< "postfix postfix/main_mailer_type string 'Internet Site'"
+        apt install --assume-yes -y postfix
+        useradd truenas
+        sed -i -e "s/myhostname = .*/myhostname = postfix.localdomain/g" /etc/postfix/main.cf
+        echo 'truenas: "| LC_CTYPE='C.UTF-8' DISCORD_CHID='${DISCORD_CHID}' DISCORD_TOKEN='${DISCORD_TOKEN}' /usr/bin/python3 /tmp/hook.py || true"' >> /etc/aliases
+        postalias /etc/aliases
+        newaliases
+        service postfix reload
+        service postfix start
+        /bin/bash
+    tty: true
+    restart: always
