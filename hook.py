@@ -1,12 +1,11 @@
-from sys import stdin
+import json
+from email.message import EmailMessage
 from email.parser import Parser
 from email.policy import EmailPolicy
-from email.message import EmailMessage
-import json
-from typing import List
 from os import environ as env
-
-from urllib.request import urlopen, Request
+from sys import stdin
+from typing import List
+from urllib.request import Request, urlopen
 
 
 def get_plaintext(msg: EmailMessage) -> str:
