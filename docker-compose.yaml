@@ -5,6 +5,7 @@ services:
     container_name: "postfix"
     ports:
       - "25:25"
+      - "587:587"
     volumes:
       - ./hook.py:/tmp/hook.py:z
     command:
@@ -12,15 +13,30 @@ services:
       - -c
       - |
         apt update
-        apt install -y apt-utils dialog
+        apt install -y apt-utils dialog sasl2-bin libsasl2-modules
         chmod 777 /tmp/hook.py
-        chmod 777 /tmp/.env
         debconf-set-selections <<< "postfix postfix/mailname string postfix.localdomain"
         debconf-set-selections <<< "postfix postfix/main_mailer_type string 'Internet Site'"
         apt install --assume-yes -y postfix
-        useradd truenas
-        sed -i -e "s/myhostname = .*/myhostname = postfix.localdomain/g" /etc/postfix/main.cf
-        echo 'truenas: "| LC_CTYPE='C.UTF-8' DISCORD_CHID='${DISCORD_CHID}' DISCORD_TOKEN='${DISCORD_TOKEN}' /usr/bin/python3 /tmp/hook.py || true"' >> /etc/aliases
+        postconf -e "myhostname = postfix.localdomain"
+        postconf -e "maillog_file = /var/log/postfix.log"
+        postconf -e "cyrus_sasl_config_path = /etc/postfix/sasl"
+        postconf -e "smtpd_sasl_local_domain = $myhostname"
+        postconf -e "smtpd_sasl_auth_enable = yes"
+        postconf -e "smtpd_sasl_security_options = noanonymous"
+        sed -i -e "s/#submission/submission/g"                                   /etc/postfix/master.cf
+        sed -i -e "s/#  -o smtpd_sasl_auth_enable/  -o smtpd_sasl_auth_enable/g" /etc/postfix/master.cf
+        mkdir -p /etc/postfix/sasl/
+        echo "pwcheck_method: auxprop"                    >> /etc/postfix/sasl/smtpd.conf
+        echo "auxprop_plugin: sasldb"                     >> /etc/postfix/sasl/smtpd.conf
+        echo "mech_list: CRAM-MD5 DIGEST-MD5 LOGIN PLAIN" >> /etc/postfix/sasl/smtpd.conf
+        sed -i -e "s%chroot_extra_files=%chroot_extra_files=etc/sasldb2%"  /usr/lib/postfix/configure-instance.sh
+        useradd -s /sbin/nologin truenas
+        useradd -s /sbin/nologin rockstor
+        echo "${TRUENAS_SASLPASSWD}"  | saslpasswd2 -p -c -u postfix.localdomain truenas
+        echo "${ROCKSTOR_SASLPASSWD}" | saslpasswd2 -p -c -u postfix.localdomain rockstor
+        echo 'truenas: "| LC_CTYPE='C.UTF-8' DISCORD_CHID='${TRUENAS_DISCORD_CHID}' DISCORD_TOKEN='${TRUENAS_DISCORD_TOKEN}' /usr/bin/python3 /tmp/hook.py || true"' >> /etc/aliases
+        echo 'rockstor: "| LC_CTYPE='C.UTF-8' DISCORD_CHID='${ROCKSTOR_DISCORD_CHID}' DISCORD_TOKEN='${ROCKSTOR_DISCORD_TOKEN}' /usr/bin/python3 /tmp/hook.py || true"' >> /etc/aliases
         postalias /etc/aliases
         newaliases
         service postfix reload
